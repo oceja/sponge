@@ -313,6 +313,102 @@ int main() {
                            make_arp(ARPMessage::OPCODE_REQUEST, local_eth, "10.0.0.1", {}, "10.0.0.5").serialize())});
             test.execute(ExpectNoFrame{});
         }
+        {
+            const EthernetAddress local_eth = random_private_ethernet_address();
+            NetworkInterfaceTestHarness test{"IP to ethernet mapping changes", local_eth, Address("4.3.2.1", 0)};
+ 
+            const EthernetAddress target_eth_1 = random_private_ethernet_address();
+            test.execute(ReceiveFrame{
+                make_frame(
+                    target_eth_1,
+                    ETHERNET_BROADCAST,
+                    EthernetHeader::TYPE_ARP,
+                    make_arp(ARPMessage::OPCODE_REQUEST, target_eth_1, "192.168.0.1", {}, "5.3.2.1").serialize()),
+                {}});
+ 
+            test.execute(ExpectNoFrame{});
+ 
+            const auto datagram_1 = make_datagram("5.6.7.8", "13.12.11.10");
+            test.execute(SendDatagram{datagram_1, Address("192.168.0.1", 0)});
+ 
+            test.execute(
+                ExpectFrame{make_frame(local_eth, target_eth_1, EthernetHeader::TYPE_IPv4, datagram_1.serialize())});
+            test.execute(ExpectNoFrame{});
+ 
+            const EthernetAddress target_eth_2 = random_private_ethernet_address();
+            test.execute(ReceiveFrame{
+                make_frame(
+                    target_eth_2,
+                    ETHERNET_BROADCAST,
+                    EthernetHeader::TYPE_ARP,
+                    make_arp(ARPMessage::OPCODE_REQUEST, target_eth_2, "192.168.0.1", {}, "5.3.2.1").serialize()),
+                {}});
+ 
+            test.execute(ExpectNoFrame{});
+            
+            const auto datagram_2 = make_datagram("5.6.7.8", "13.12.11.10");
+            test.execute(SendDatagram{datagram_2, Address("192.168.0.1", 0)});
+ 
+            test.execute(
+                ExpectFrame{make_frame(local_eth, target_eth_2, EthernetHeader::TYPE_IPv4, datagram_2.serialize())});
+            test.execute(ExpectNoFrame{});
+        }
+        {
+            const EthernetAddress local_eth = random_private_ethernet_address();
+            NetworkInterfaceTestHarness test{"Same IP to ethernet mapping arrives twice", local_eth, Address("4.3.2.1", 0)};
+ 
+            const EthernetAddress target_eth = random_private_ethernet_address();
+            test.execute(ReceiveFrame{
+                make_frame(
+                    target_eth,
+                    ETHERNET_BROADCAST,
+                    EthernetHeader::TYPE_ARP,
+                    make_arp(ARPMessage::OPCODE_REQUEST, target_eth, "192.168.0.1", {}, "5.3.2.1").serialize()),
+                {}});
+ 
+            test.execute(ExpectNoFrame{});
+ 
+            test.execute(Tick{10000});
+            test.execute(ExpectNoFrame{});
+ 
+            const auto datagram_1 = make_datagram("5.6.7.8", "13.12.11.10");
+            test.execute(SendDatagram{datagram_1, Address("192.168.0.1", 0)});
+ 
+            test.execute(
+                ExpectFrame{make_frame(local_eth, target_eth, EthernetHeader::TYPE_IPv4, datagram_1.serialize())});
+            test.execute(ExpectNoFrame{});
+ 
+            test.execute(ReceiveFrame{
+                make_frame(
+                    target_eth,
+                    ETHERNET_BROADCAST,
+                    EthernetHeader::TYPE_ARP,
+                    make_arp(ARPMessage::OPCODE_REQUEST, target_eth, "192.168.0.1", {}, "5.3.2.1").serialize()),
+                {}});
+ 
+            test.execute(Tick{20005});
+            test.execute(ExpectNoFrame{});
+ 
+            const auto datagram_2 = make_datagram("5.6.7.8", "13.12.11.10");
+            test.execute(SendDatagram{datagram_2, Address("192.168.0.1", 0)});
+ 
+            test.execute(
+                ExpectFrame{make_frame(local_eth, target_eth, EthernetHeader::TYPE_IPv4, datagram_2.serialize())});
+            test.execute(ExpectNoFrame{});
+ 
+            test.execute(Tick{10000});
+ 
+            const auto datagram_3 = make_datagram("5.6.7.8", "13.12.11.10");
+            test.execute(SendDatagram{datagram_3, Address("192.168.0.1", 0)});
+ 
+            // outgoing datagram should result in an ARP request
+            test.execute(ExpectFrame{
+                make_frame(local_eth,
+                           ETHERNET_BROADCAST,
+                           EthernetHeader::TYPE_ARP,
+                           make_arp(ARPMessage::OPCODE_REQUEST, local_eth, "4.3.2.1", {}, "192.168.0.1").serialize())});
+            test.execute(ExpectNoFrame{});
+        }
     } catch (const exception &e) {
         cerr << e.what() << endl;
         return EXIT_FAILURE;
